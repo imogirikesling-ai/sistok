@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SISTOK · Stok Plastik & Safetybox</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230f766e'/%3E%3Ctext x='50' y='65' font-size='54' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='bold'%3ES%3C/text%3E%3C/svg%3E">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  .pin-input { letter-spacing: 0.5em; font-family: ui-monospace, Menlo, Consolas, monospace; }
+  @keyframes pulse-red { 0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); } 50% { box-shadow: 0 0 0 6px rgba(239,68,68,0); } }
+  .pulse-alert { animation: pulse-red 2s infinite; }
+</style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+<div id="root"></div>
+
+<script type="text/babel">
+// ============================================================
+// KONFIGURASI
+// Ganti baris di bawah ini dengan URL Web App Apps Script Anda.
+// ============================================================
+const API_URL = 'https://script.google.com/macros/s/AKfycbxbVwN7DmeWrcBksyaAHOXMPvz78NUMc6ikxUrdkqqEyzqQWxtYJrz6t3fW3OkuGw/exec';
+
+const { useState, useEffect, useRef } = React;
+
+// ---------- API helper ----------
+async function api(action, payload = {}) {
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      // text/plain untuk menghindari CORS preflight
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action, ...payload })
+    });
+    const text = await res.text();
+    try { return JSON.parse(text); }
+    catch { return { ok: false, error: 'Response bukan JSON: ' + text.substring(0, 120) }; }
+  } catch (err) {
+    return { ok: false, error: 'Koneksi gagal: ' + err.message };
+  }
+}
+
+const formatDateTime = (iso) => {
+  if (!iso) return '-';
+  const d = new Date(iso);
+  return d.toLocaleString('id-ID', {
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit'
+  });
+};
+
+const formatDate = (iso) => {
+  if (!iso) return '-';
+  return new Date(iso).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
+// ============================================================
+// LOGIN SCREEN
+// ============================================================
+function LoginScreen({ onLogin }) {
+  const [username, setUsername] = useState('');
+  const [pin, setPin] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const pinRef = useRef(null);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (!username || !pin) { setError('Username dan PIN wajib diisi'); return; }
+    setLoading(true);
+    const res = await api('login', { username: username.trim().toLowerCase(), pin: pin.trim() });
+    setLoading(false);
+    if (!res.ok) { setError(res.error || 'Login gagal'); return; }
+    localStorage.setItem('sistok_token', res.token);
+    localStorage.setItem('sistok_user', JSON.stringify(res.user));
+    onLogin(res.token, res.user);
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-teal-50 via-slate-50 to-emerald-50">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-teal-700 rounded-2xl shadow-lg mb-3">
+            <span className="text-white text-3xl font-bold">S</span>
+          </div>
+          <h1 className="text-2xl font-bold text-slate-800">SISTOK</h1>
+          <p className="text-sm text-slate-500 mt-1">Stok Plastik &amp; Safetybox</p>
+          <p className="text-xs text-slate-400 mt-0.5">Puskesmas Imogiri I</p>
+        </div>
+        <form onSubmit={submit} className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">Username</label>
+            <input
+              type="text" autoFocus
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="kesling / marwanto"
+              className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); pinRef.current?.focus(); } }}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">PIN</label>
+            <input
+              ref={pinRef}
+              type="password"
+              inputMode="numeric"
+              value={pin}
+              onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
+              placeholder="••••••"
+              className="pin-input w-full px-3.5 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none text-center text-lg"
+            />
+          </div>
+          {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+          <button
+            type="submit" disabled={loading}
+            className="w-full bg-teal-700 hover:bg-teal-800 text-white font-semibold py-2.5 rounded-lg transition disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {loading ? 'Memverifikasi…' : 'Masuk'}
+          </button>
+        </form>
+        <p className="text-center text-xs text-slate-400 mt-6">v1.0 · {new Date().getFullYear()}</p>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+function Dashboard({ data, onRefresh }) {
+  if (!data) return <div className="text-slate-500">Memuat…</div>;
+  const { items, stocks, lastUpdate, threshold } = data;
+
+  const statusOf = (stock) => {
+    if (stock <= threshold) return { label: 'Stok Rendah', color: 'red', bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', chip: 'bg-red-100 text-red-700' };
+    if (stock <= threshold * 2) return { label: 'Perlu Perhatian', color: 'amber', bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', chip: 'bg-amber-100 text-amber-700' };
+    return { label: 'Aman', color: 'emerald', bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', chip: 'bg-emerald-100 text-emerald-700' };
+  };
+
+  const lowCount = Object.values(stocks).filter(s => s <= threshold).length;
+  const totalLembar = Object.values(stocks).reduce((a, b) => a + b, 0);
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="bg-white border border-slate-200 rounded-xl p-4">
+          <div className="text-xs font-medium text-slate-500 uppercase tracking-wide">Total Item</div>
+          <div className="text-2xl font-bold text-slate-800 mt-1">{items.length}</div>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-4">
+          <div className="text-xs font-medium text-slate-500 uppercase tracking-wide">Total Lembar</div>
+          <div className="text-2xl font-bold text-slate-800 mt-1">{totalLembar.toLocaleString('id-ID')}</div>
+        </div>
+        <div className={`border rounded-xl p-4 ${lowCount > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200'}`}>
+          <div className="text-xs font-medium text-slate-500 uppercase tracking-wide">Stok Rendah</div>
+          <div className={`text-2xl font-bold mt-1 ${lowCount > 0 ? 'text-red-700' : 'text-slate-800'}`}>{lowCount}</div>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-slate-800">Stok Saat Ini</h2>
+        <button onClick={onRefresh} className="text-sm text-teal-700 hover:text-teal-900 font-medium">↻ Refresh</button>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {items.map(item => {
+          const stock = stocks[item.id] ?? 0;
+          const st = statusOf(stock);
+          const isLow = stock <= threshold;
+          return (
+            <div key={item.id}
+              className={`border rounded-xl p-4 ${st.bg} ${st.border} ${isLow ? 'pulse-alert' : ''}`}>
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="font-semibold text-slate-800 leading-tight">{item.name}</div>
+                  <div className="text-xs text-slate-500 mt-0.5 uppercase">{item.category}</div>
+                </div>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${st.chip}`}>{st.label}</span>
+              </div>
+              <div className="mt-3 flex items-baseline gap-1.5">
+                <span className={`text-3xl font-bold ${st.text}`}>{stock.toLocaleString('id-ID')}</span>
+                <span className="text-sm text-slate-500">lembar</span>
+              </div>
+              <div className="text-xs text-slate-400 mt-2">
+                Update terakhir: {lastUpdate[item.id] ? formatDateTime(lastUpdate[item.id]) : '-'}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// BARANG MASUK (admin only)
+// ============================================================
+function BarangMasuk({ data, token, onDone }) {
+  const [itemId, setItemId] = useState(data?.items[0]?.id || '');
+  const [qty, setQty] = useState('');
+  const [note, setNote] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setMsg(null);
+    const q = Number(qty);
+    if (!q || q <= 0) { setMsg({ type: 'err', text: 'Jumlah harus lebih dari 0' }); return; }
+    setSubmitting(true);
+    const res = await api('addMasuk', { token, item_id: itemId, qty: q, note });
+    setSubmitting(false);
+    if (!res.ok) { setMsg({ type: 'err', text: res.error }); return; }
+    setMsg({ type: 'ok', text: res.message + ' (' + q + ' lembar)' });
+    setQty(''); setNote('');
+    onDone?.();
+  };
+
+  if (!data) return null;
+
+  return (
+    <div className="max-w-xl">
+      <h2 className="text-lg font-semibold text-slate-800 mb-4">Catat Barang Masuk</h2>
+      <form onSubmit={submit} className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">Item</label>
+          <select value={itemId} onChange={e => setItemId(e.target.value)}
+            className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none bg-white">
+            {data.items.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">Jumlah (lembar)</label>
+          <input type="number" min="1" value={qty} onChange={e => setQty(e.target.value)}
+            placeholder="mis. 500"
+            className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">Catatan <span className="text-slate-400 font-normal">(opsional)</span></label>
+          <input type="text" value={note} onChange={e => setNote(e.target.value)}
+            placeholder="No. nota, supplier, dll."
+            className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" />
+        </div>
+        {msg && (
+          <div className={`text-sm rounded-lg px-3 py-2 ${msg.type === 'ok' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+            {msg.text}
+          </div>
+        )}
+        <button type="submit" disabled={submitting}
+          className="w-full bg-teal-700 hover:bg-teal-800 text-white font-semibold py-2.5 rounded-lg transition disabled:opacity-60">
+          {submitting ? 'Menyimpan…' : 'Simpan Barang Masuk'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+// ============================================================
+// STOK KELUAR
+// ============================================================
+function StokKeluar({ data, token, onDone }) {
+  const [itemId, setItemId] = useState(data?.items[0]?.id || '');
+  const [qty, setQty] = useState('1');
+  const [note, setNote] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const currentStock = data?.stocks?.[itemId] ?? 0;
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setMsg(null);
+    const q = Number(qty);
+    if (!q || q <= 0) { setMsg({ type: 'err', text: 'Jumlah harus lebih dari 0' }); return; }
+    if (q > currentStock) {
+      if (!confirm('Jumlah melebihi stok saat ini (' + currentStock + ' lembar). Lanjutkan?')) return;
+    }
+    setSubmitting(true);
+    const res = await api('addKeluar', { token, item_id: itemId, qty: q, note });
+    setSubmitting(false);
+    if (!res.ok) { setMsg({ type: 'err', text: res.error }); return; }
+    setMsg({ type: 'ok', text: res.message + ' (' + q + ' lembar)' });
+    setQty('1'); setNote('');
+    onDone?.();
+  };
+
+  if (!data) return null;
+
+  return (
+    <div className="max-w-xl">
+      <h2 className="text-lg font-semibold text-slate-800 mb-4">Catat Stok Keluar</h2>
+      <form onSubmit={submit} className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">Item</label>
+          <select value={itemId} onChange={e => setItemId(e.target.value)}
+            className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none bg-white">
+            {data.items.map(i => (
+              <option key={i.id} value={i.id}>{i.name} — stok {data.stocks[i.id]} lembar</option>
+            ))}
+          </select>
+          <div className="text-xs text-slate-500 mt-1.5">Stok saat ini: <span className="font-semibold text-slate-700">{currentStock} lembar</span></div>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">Jumlah Keluar (lembar)</label>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setQty(String(Math.max(1, Number(qty || 0) - 1)))}
+              className="w-11 h-11 border border-slate-300 rounded-lg text-xl text-slate-600 hover:bg-slate-50">−</button>
+            <input type="number" min="1" value={qty} onChange={e => setQty(e.target.value)}
+              className="flex-1 px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none text-center text-lg font-semibold" />
+            <button type="button" onClick={() => setQty(String(Number(qty || 0) + 1))}
+              className="w-11 h-11 border border-slate-300 rounded-lg text-xl text-slate-600 hover:bg-slate-50">+</button>
+          </div>
+          <div className="text-xs text-slate-400 mt-1">Default 1 lembar untuk pengambilan harian</div>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">Keperluan <span className="text-slate-400 font-normal">(opsional)</span></label>
+          <input type="text" value={note} onChange={e => setNote(e.target.value)}
+            placeholder="mis. UGD, poli umum, dsb."
+            className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" />
+        </div>
+        {msg && (
+          <div className={`text-sm rounded-lg px-3 py-2 ${msg.type === 'ok' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+            {msg.text}
+          </div>
+        )}
+        <button type="submit" disabled={submitting}
+          className="w-full bg-teal-700 hover:bg-teal-800 text-white font-semibold py-2.5 rounded-lg transition disabled:opacity-60">
+          {submitting ? 'Menyimpan…' : 'Simpan Stok Keluar'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+// ============================================================
+// STOK OPNAME
+// ============================================================
+function StokOpname({ data, token, onDone }) {
+  const [counts, setCounts] = useState({});
+  const [note, setNote] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  useEffect(() => {
+    if (data?.items) {
+      const init = {};
+      data.items.forEach(i => init[i.id] = String(data.stocks[i.id] ?? 0));
+      setCounts(init);
+    }
+  }, [data?.items]);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setMsg(null);
+    const opnames = Object.entries(counts).map(([item_id, qty]) => ({ item_id, qty: Number(qty) }));
+    for (const o of opnames) {
+      if (isNaN(o.qty) || o.qty < 0) { setMsg({ type: 'err', text: 'Semua jumlah harus angka ≥ 0' }); return; }
+    }
+    if (!confirm('Simpan opname untuk ' + opnames.length + ' item? Opname akan menjadi stok acuan baru.')) return;
+    setSubmitting(true);
+    const res = await api('addOpname', { token, opnames, note });
+    setSubmitting(false);
+    if (!res.ok) { setMsg({ type: 'err', text: res.error }); return; }
+    setMsg({ type: 'ok', text: res.message });
+    onDone?.();
+  };
+
+  if (!data) return null;
+
+  return (
+    <div className="max-w-2xl">
+      <h2 className="text-lg font-semibold text-slate-800 mb-1">Stok Opname</h2>
+      <p className="text-sm text-slate-500 mb-4">Hitung fisik seluruh item. Angka opname akan menjadi stok acuan baru.</p>
+      <form onSubmit={submit} className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+        <div className="divide-y divide-slate-100">
+          {data.items.map(item => {
+            const current = data.stocks[item.id] ?? 0;
+            const inputVal = counts[item.id] ?? '';
+            const diff = Number(inputVal) - current;
+            return (
+              <div key={item.id} className="py-3 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-slate-800">{item.name}</div>
+                  <div className="text-xs text-slate-500">Stok sistem: {current} lembar</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input type="number" min="0" value={inputVal}
+                    onChange={e => setCounts({ ...counts, [item.id]: e.target.value })}
+                    className="w-24 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none text-right font-semibold" />
+                  <span className="text-sm text-slate-500 w-14">lembar</span>
+                </div>
+                <div className={`text-xs w-16 text-right font-medium ${diff === 0 ? 'text-slate-400' : diff > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                  {diff !== 0 && (diff > 0 ? '+' : '') + diff}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">Catatan Opname <span className="text-slate-400 font-normal">(opsional)</span></label>
+          <input type="text" value={note} onChange={e => setNote(e.target.value)}
+            placeholder="mis. opname bulanan, verifikasi gudang"
+            className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" />
+        </div>
+        {msg && (
+          <div className={`text-sm rounded-lg px-3 py-2 ${msg.type === 'ok' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+            {msg.text}
+          </div>
+        )}
+        <button type="submit" disabled={submitting}
+          className="w-full bg-teal-700 hover:bg-teal-800 text-white font-semibold py-2.5 rounded-lg transition disabled:opacity-60">
+          {submitting ? 'Menyimpan…' : 'Simpan Opname'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+// ============================================================
+// RIWAYAT (admin only)
+// ============================================================
+function Riwayat({ data, token }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const monthAgo = new Date(Date.now() - 30 * 86400 * 1000).toISOString().slice(0, 10);
+  const [startDate, setStartDate] = useState(monthAgo);
+  const [endDate, setEndDate] = useState(today);
+  const [type, setType] = useState('');
+  const [itemId, setItemId] = useState('');
+  const [transactions, setTransactions] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    const res = await api('getRiwayat', { token, startDate, endDate, type: type || null, item_id: itemId || null });
+    setLoading(false);
+    if (res.ok) setTransactions(res.transactions);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const itemName = (id) => data?.items.find(i => i.id === id)?.name || id;
+
+  const typeChip = (t) => {
+    if (t === 'masuk')  return 'bg-emerald-100 text-emerald-700';
+    if (t === 'keluar') return 'bg-amber-100 text-amber-700';
+    if (t === 'opname') return 'bg-blue-100 text-blue-700';
+    return 'bg-slate-100 text-slate-700';
+  };
+
+  const exportCsv = () => {
+    const header = ['Tanggal', 'Jam', 'Tipe', 'Item', 'Jumlah (lembar)', 'User', 'Catatan'];
+    const rows = transactions.map(t => {
+      const d = new Date(t.timestamp);
+      return [
+        d.toLocaleDateString('id-ID'),
+        d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+        t.type, itemName(t.item_id), t.qty, t.user, (t.note || '').replace(/"/g, '""')
+      ];
+    });
+    const csv = [header, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `sistok-riwayat-${startDate}_${endDate}.csv`;
+    a.click();
+  };
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-semibold text-slate-800">Riwayat Transaksi</h2>
+      <div className="bg-white border border-slate-200 rounded-xl p-4 grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Dari</label>
+          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full px-2.5 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-teal-500" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Sampai</label>
+          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full px-2.5 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-teal-500" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Tipe</label>
+          <select value={type} onChange={e => setType(e.target.value)} className="w-full px-2.5 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-teal-500 bg-white">
+            <option value="">Semua</option>
+            <option value="masuk">Masuk</option>
+            <option value="keluar">Keluar</option>
+            <option value="opname">Opname</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Item</label>
+          <select value={itemId} onChange={e => setItemId(e.target.value)} className="w-full px-2.5 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-teal-500 bg-white">
+            <option value="">Semua</option>
+            {data?.items.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+          </select>
+        </div>
+        <div className="flex items-end gap-2">
+          <button onClick={load} disabled={loading} className="flex-1 bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold py-2 rounded-lg disabled:opacity-60">
+            {loading ? '…' : 'Filter'}
+          </button>
+          <button onClick={exportCsv} disabled={transactions.length === 0} className="px-3 py-2 border border-slate-300 rounded-lg text-sm hover:bg-slate-50 disabled:opacity-50">CSV</button>
+        </div>
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 border-b border-slate-200">
+              <tr className="text-left text-slate-600">
+                <th className="px-4 py-2.5 font-medium">Tanggal</th>
+                <th className="px-4 py-2.5 font-medium">Tipe</th>
+                <th className="px-4 py-2.5 font-medium">Item</th>
+                <th className="px-4 py-2.5 font-medium text-right">Jumlah</th>
+                <th className="px-4 py-2.5 font-medium">User</th>
+                <th className="px-4 py-2.5 font-medium">Catatan</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {transactions.length === 0 && !loading && (
+                <tr><td colSpan="6" className="px-4 py-8 text-center text-slate-400">Tidak ada transaksi pada filter ini</td></tr>
+              )}
+              {transactions.map(t => (
+                <tr key={t.id} className="hover:bg-slate-50">
+                  <td className="px-4 py-2 text-slate-600 whitespace-nowrap">{formatDateTime(t.timestamp)}</td>
+                  <td className="px-4 py-2"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${typeChip(t.type)}`}>{t.type}</span></td>
+                  <td className="px-4 py-2 text-slate-800">{itemName(t.item_id)}</td>
+                  <td className="px-4 py-2 text-right font-semibold text-slate-800">{t.qty} <span className="text-slate-400 font-normal">lbr</span></td>
+                  <td className="px-4 py-2 text-slate-600">{t.user}</td>
+                  <td className="px-4 py-2 text-slate-500">{t.note || <span className="text-slate-300">—</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {transactions.length > 0 && (
+          <div className="px-4 py-2 bg-slate-50 border-t border-slate-200 text-xs text-slate-500">
+            {transactions.length} transaksi · maks. 500 terbaru
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// MAIN APP
+// ============================================================
+function App() {
+  const [token, setToken] = useState(() => localStorage.getItem('sistok_token'));
+  const [user, setUser] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('sistok_user') || 'null'); } catch { return null; }
+  });
+  const [data, setData] = useState(null);
+  const [tab, setTab] = useState('dashboard');
+  const [loadError, setLoadError] = useState('');
+
+  const loadData = async () => {
+    if (!token) return;
+    const res = await api('getData', { token });
+    if (!res.ok) {
+      setLoadError(res.error || 'Gagal memuat data');
+      if (res.error && res.error.toLowerCase().includes('sesi')) logout();
+      return;
+    }
+    setLoadError('');
+    setData(res);
+  };
+
+  useEffect(() => { if (token) loadData(); }, [token]);
+
+  const logout = () => {
+    localStorage.removeItem('sistok_token');
+    localStorage.removeItem('sistok_user');
+    setToken(null); setUser(null); setData(null);
+  };
+
+  const onLogin = (t, u) => {
+    setToken(t); setUser(u);
+    const defaultTab = u.role === 'admin' ? 'dashboard' : 'keluar';
+    setTab(defaultTab);
+  };
+
+  if (!token || !user) return <LoginScreen onLogin={onLogin} />;
+
+  const isAdmin = user.role === 'admin';
+  const tabs = isAdmin
+    ? [
+        { id: 'dashboard', label: 'Dashboard' },
+        { id: 'masuk',     label: 'Barang Masuk' },
+        { id: 'keluar',    label: 'Stok Keluar' },
+        { id: 'opname',    label: 'Stok Opname' },
+        { id: 'riwayat',   label: 'Riwayat' }
+      ]
+    : [
+        { id: 'keluar', label: 'Stok Keluar' },
+        { id: 'opname', label: 'Stok Opname' }
+      ];
+
+  return (
+    <div className="min-h-screen bg-slate-100">
+      {/* Header */}
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-teal-700 rounded-lg flex items-center justify-center">
+              <span className="text-white font-bold">S</span>
+            </div>
+            <div>
+              <div className="font-bold text-slate-800 leading-tight">SISTOK</div>
+              <div className="text-xs text-slate-500 leading-tight">Puskesmas Imogiri I</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="text-right hidden sm:block">
+              <div className="text-sm font-medium text-slate-700">{user.name}</div>
+              <div className="text-xs text-slate-500">{isAdmin ? 'Admin' : 'Staff'}</div>
+            </div>
+            <button onClick={logout} className="text-sm text-slate-500 hover:text-red-600 border border-slate-300 hover:border-red-300 rounded-lg px-3 py-1.5">
+              Keluar
+            </button>
+          </div>
+        </div>
+        <div className="max-w-6xl mx-auto px-2 overflow-x-auto">
+          <nav className="flex gap-1">
+            {tabs.map(t => (
+              <button key={t.id} onClick={() => setTab(t.id)}
+                className={`px-3 py-2 text-sm font-medium border-b-2 whitespace-nowrap transition ${
+                  tab === t.id ? 'border-teal-700 text-teal-700' : 'border-transparent text-slate-500 hover:text-slate-700'
+                }`}>
+                {t.label}
+              </button>
+            ))}
+          </nav>
+        </div>
+      </header>
+
+      {/* Content */}
+      <main className="max-w-6xl mx-auto px-4 py-6">
+        {loadError && (
+          <div className="mb-4 bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-2.5 text-sm flex justify-between items-center">
+            <span>{loadError}</span>
+            <button onClick={loadData} className="font-semibold hover:underline">Coba lagi</button>
+          </div>
+        )}
+        {tab === 'dashboard' && isAdmin && <Dashboard data={data} onRefresh={loadData} />}
+        {tab === 'masuk'   && isAdmin && <BarangMasuk data={data} token={token} onDone={loadData} />}
+        {tab === 'keluar'            && <StokKeluar data={data} token={token} onDone={loadData} />}
+        {tab === 'opname'            && <StokOpname data={data} token={token} onDone={loadData} />}
+        {tab === 'riwayat' && isAdmin && <Riwayat data={data} token={token} />}
+      </main>
+
+      <footer className="max-w-6xl mx-auto px-4 py-6 text-center text-xs text-slate-400">
+        SISTOK v1.0 · Puskesmas Imogiri I · {new Date().getFullYear()}
+      </footer>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
